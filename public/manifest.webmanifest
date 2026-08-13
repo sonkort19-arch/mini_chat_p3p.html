@@ -1,0 +1,18 @@
+{
+  "name": "Mini Chat",
+  "short_name": "Mini Chat",
+  "description": "Локальная история, фото, видео и голосовые",
+  "start_url": "/chat.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#0b8f6a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
