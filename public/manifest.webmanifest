@@ -1,12 +1,12 @@
 {
-  "name": "Mini Chat",
+  "name": "Mini Chat Pro",
   "short_name": "Mini Chat",
-  "description": "Локальная история, фото, видео и голосовые",
+  "description": "Локальный мессенджер без серверной истории",
   "start_url": "/chat.html",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f0f2f5",
-  "theme_color": "#0b8f6a",
+  "background_color": "#eef1f3",
+  "theme_color": "#126b5a",
   "icons": [
     {
       "src": "/icon.svg",
