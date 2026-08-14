@@ -4,196 +4,76 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const G = globalThis;
-if (!G.__miniChatV3Rooms) G.__miniChatV3Rooms = new Map();
-const rooms = G.__miniChatV3Rooms;
+if (!G.__miniChatMaxRooms) G.__miniChatMaxRooms = new Map();
+const rooms = G.__miniChatMaxRooms;
 
-function isOpen(ws) {
-  return ws && ws.readyState === 1;
-}
-
-function sendJSON(ws, payload) {
-  if (!isOpen(ws)) return;
-  try { ws.send(JSON.stringify(payload)); } catch {}
-}
-
-function cleanCode(value) {
-  return String(value || "").replace(/\D/g, "").slice(0, 6);
-}
-
-function roomSet(code) {
-  if (!rooms.has(code)) rooms.set(code, new Set());
-  return rooms.get(code);
-}
-
+function isOpen(ws) { return ws && ws.readyState === 1; }
+function sendJSON(ws, payload) { if (!isOpen(ws)) return; try { ws.send(JSON.stringify(payload)); } catch {} }
+function codeOf(value) { return String(value || "").replace(/\D/g, "").slice(0, 6); }
+function getRoom(code) { if (!rooms.has(code)) rooms.set(code, new Set()); return rooms.get(code); }
 function cleanRoom(code) {
-  const room = rooms.get(code);
-  if (!room) return null;
-  for (const member of [...room]) {
-    if (!isOpen(member)) room.delete(member);
-  }
-  if (room.size === 0) {
-    rooms.delete(code);
-    return null;
-  }
+  const room = rooms.get(code); if (!room) return null;
+  for (const client of [...room]) if (!isOpen(client)) room.delete(client);
+  if (room.size === 0) { rooms.delete(code); return null; }
   return room;
 }
-
-function addToRoom(ws, code) {
-  if (!ws.__rooms) ws.__rooms = new Set();
-  ws.__rooms.add(code);
-  roomSet(code).add(ws);
+function addRoom(ws, code) { if (!ws.__rooms) ws.__rooms = new Set(); ws.__rooms.add(code); getRoom(code).add(ws); }
+function leaveRoom(ws, code, notify = true) {
+  ws.__rooms?.delete(code); const room = rooms.get(code); if (!room) return;
+  room.delete(ws); for (const c of [...room]) if (!isOpen(c)) room.delete(c);
+  if (room.size === 0) { rooms.delete(code); return; }
+  if (notify) for (const c of room) sendJSON(c, { type:"peer_left", room:code, at:Date.now() });
 }
-
-function removeFromRoom(ws, code, notify = true) {
-  const room = rooms.get(code);
-  ws.__rooms?.delete(code);
-  if (!room) return;
-  room.delete(ws);
-
-  for (const member of [...room]) {
-    if (!isOpen(member)) room.delete(member);
-  }
-
-  if (room.size === 0) {
-    rooms.delete(code);
-    return;
-  }
-
-  if (notify) {
-    for (const member of room) {
-      sendJSON(member, { type: "peer_left", room: code, at: Date.now() });
-    }
-  }
+function leaveAll(ws) { for (const code of [...(ws.__rooms || [])]) leaveRoom(ws, code, true); }
+function presence(code) { const room = cleanRoom(code); if (!room) return; for (const c of room) sendJSON(c,{type:"presence",room:code,count:room.size}); }
+function relayJSON(roomCode, sender, payload) {
+  const room = cleanRoom(roomCode); if (!room) return; const text = JSON.stringify(payload);
+  for (const c of room) if (c !== sender && isOpen(c)) try { c.send(text); } catch {}
 }
-
-function leaveAll(ws) {
-  for (const code of [...(ws.__rooms || [])]) {
-    removeFromRoom(ws, code, true);
-  }
+function relayBinary(roomCode, sender, data) {
+  const room = cleanRoom(roomCode); if (!room) return;
+  for (const c of room) if (c !== sender && isOpen(c)) try { c.send(data,{binary:true}); } catch {}
 }
-
-function relay(roomCode, sender, data, isBinary = false) {
-  const room = cleanRoom(roomCode);
-  if (!room) return;
-
-  for (const member of room) {
-    if (member === sender || !isOpen(member)) continue;
-    try { member.send(data, { binary: isBinary }); } catch {}
-  }
-}
-
-function announcePresence(code) {
-  const room = cleanRoom(code);
-  if (!room) return;
-  const size = room.size;
-  for (const member of room) {
-    sendJSON(member, { type: "room_presence", room: code, count: size });
-  }
-}
-
-function handleControl(ws, msg) {
-  const type = msg?.type;
-  const code = cleanCode(msg?.room || msg?.code);
-
+function handle(ws,msg) {
+  const type = msg?.type; const roomCode = codeOf(msg?.room || msg?.code);
   if (type === "create") {
-    if (code.length !== 6) return sendJSON(ws, { type: "error", message: "Неверный код" });
-
-    const room = cleanRoom(code);
-    if (room && room.size >= 2 && !room.has(ws)) {
-      return sendJSON(ws, { type: "full", room: code });
-    }
-    if (room && room.size > 0 && !room.has(ws) && !msg.resume) {
-      return sendJSON(ws, { type: "taken", room: code });
-    }
-
-    addToRoom(ws, code);
-    sendJSON(ws, { type: "room_ready", room: code, role: "owner" });
-    announcePresence(code);
-    return;
+    if (roomCode.length !== 6) return sendJSON(ws,{type:"error",message:"bad_room"});
+    const room = cleanRoom(roomCode);
+    if (room && room.size > 0 && !room.has(ws) && !msg.resume) return sendJSON(ws,{type:"taken",room:roomCode});
+    if (room && room.size >= 2 && !room.has(ws)) return sendJSON(ws,{type:"full",room:roomCode});
+    addRoom(ws,roomCode); sendJSON(ws,{type:"room_ready",room:roomCode,role:"owner"}); presence(roomCode); return;
   }
-
   if (type === "join") {
-    if (code.length !== 6) return sendJSON(ws, { type: "not_found", room: code });
-
-    const room = cleanRoom(code);
-    if (!room) return sendJSON(ws, { type: "not_found", room: code });
-    if (room.size >= 2 && !room.has(ws)) return sendJSON(ws, { type: "full", room: code });
-
-    addToRoom(ws, code);
-    sendJSON(ws, { type: "room_ready", room: code, role: "guest" });
-    announcePresence(code);
-    return;
+    if (roomCode.length !== 6) return sendJSON(ws,{type:"not_found",room:roomCode});
+    const room = cleanRoom(roomCode); if (!room) return sendJSON(ws,{type:"not_found",room:roomCode});
+    if (room.size >= 2 && !room.has(ws)) return sendJSON(ws,{type:"full",room:roomCode});
+    addRoom(ws,roomCode); sendJSON(ws,{type:"room_ready",room:roomCode,role:"guest"}); presence(roomCode); return;
   }
-
   if (type === "resume") {
-    if (code.length !== 6) return;
-    const role = msg.role === "owner" ? "owner" : "guest";
-    const room = cleanRoom(code);
-
+    if (roomCode.length !== 6) return; const role = msg.role === "owner" ? "owner" : "guest"; const room = cleanRoom(roomCode);
     if (!room) {
-      if (role === "owner") {
-        addToRoom(ws, code);
-        sendJSON(ws, { type: "room_ready", room: code, role });
-        announcePresence(code);
-      } else {
-        sendJSON(ws, { type: "room_offline", room: code });
-      }
+      if (role === "owner") { addRoom(ws,roomCode); sendJSON(ws,{type:"room_ready",room:roomCode,role}); presence(roomCode); }
+      else sendJSON(ws,{type:"room_offline",room:roomCode});
       return;
     }
-
-    if (room.size >= 2 && !room.has(ws)) {
-      sendJSON(ws, { type: "room_full", room: code });
-      return;
-    }
-
-    addToRoom(ws, code);
-    sendJSON(ws, { type: "room_ready", room: code, role });
-    announcePresence(code);
-    return;
+    if (room.size >= 2 && !room.has(ws)) return sendJSON(ws,{type:"room_full",room:roomCode});
+    addRoom(ws,roomCode); sendJSON(ws,{type:"room_ready",room:roomCode,role}); presence(roomCode); return;
   }
-
-  if (type === "leave_room") {
-    if (code) removeFromRoom(ws, code, true);
-    return;
-  }
-
-  if (type === "ping") {
-    sendJSON(ws, { type: "pong", at: Date.now() });
-    return;
-  }
-
-  const relayTypes = new Set([
-    "chat", "file_meta", "file_end", "typing", "receipt",
-    "profile", "message_action", "reaction"
-  ]);
-
-  if (relayTypes.has(type) && code && ws.__rooms?.has(code)) {
-    relay(code, ws, JSON.stringify(msg), false);
-  }
+  if (type === "leave_room") { if (roomCode) leaveRoom(ws,roomCode,true); return; }
+  if (type === "ping") { sendJSON(ws,{type:"pong",at:Date.now()}); return; }
+  if (["crypto_hello","secure","typing","receipt"].includes(type) && roomCode && ws.__rooms?.has(roomCode)) relayJSON(roomCode,ws,msg);
 }
 
 export function GET() {
   return experimental_upgradeWebSocket((ws) => {
     ws.__rooms = new Set();
-
-    ws.on("message", (data, isBinary) => {
+    ws.on("message", (data,isBinary) => {
       if (isBinary) {
-        // Binary frame begins with six ASCII bytes containing the room code.
-        try {
-          const roomCode = data.subarray(0, 6).toString("utf8");
-          if (/^\d{6}$/.test(roomCode) && ws.__rooms?.has(roomCode)) {
-            relay(roomCode, ws, data, true);
-          }
-        } catch {}
+        try { const roomCode = data.subarray(0,6).toString("utf8"); if (/^\d{6}$/.test(roomCode) && ws.__rooms?.has(roomCode)) relayBinary(roomCode,ws,data); } catch {}
         return;
       }
-
-      let msg;
-      try { msg = JSON.parse(data.toString()); } catch { return; }
-      handleControl(ws, msg);
+      let msg; try { msg = JSON.parse(data.toString()); } catch { return; } handle(ws,msg);
     });
-
-    ws.on("close", () => leaveAll(ws));
-    ws.on("error", () => leaveAll(ws));
+    ws.on("close",()=>leaveAll(ws)); ws.on("error",()=>leaveAll(ws));
   });
 }

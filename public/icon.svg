@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#167d68"/><stop offset="1" stop-color="#0b5447"/></linearGradient></defs>
-<rect width="512" height="512" rx="118" fill="url(#g)"/>
-<path d="M112 157c0-39 32-71 71-71h146c39 0 71 32 71 71v116c0 39-32 71-71 71h-83l-101 83 25-83c-33-6-58-35-58-70V157Z" fill="#fff"/>
-<path d="M184 207h144M184 253h105" stroke="#126b5a" stroke-width="25" stroke-linecap="round"/>
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#1b816c"/><stop offset="1" stop-color="#0b4c41"/></linearGradient></defs>
+<rect width="512" height="512" rx="120" fill="url(#g)"/>
+<path d="M115 153c0-39 32-71 71-71h140c39 0 71 32 71 71v121c0 39-32 71-71 71h-77l-104 84 27-84c-33-7-57-36-57-71V153Z" fill="white"/>
+<circle cx="202" cy="216" r="18" fill="#176b5b"/><circle cx="256" cy="216" r="18" fill="#176b5b"/><circle cx="310" cy="216" r="18" fill="#176b5b"/>
+<path d="M205 278h102" stroke="#176b5b" stroke-width="18" stroke-linecap="round"/>
 </svg>
